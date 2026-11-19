@@ -185,3 +185,71 @@ modelB のプログラムを作るときに、次の点を説明する（2026-11
 - "FPAENet: Pneumonia Detection Network Based on Feature Pyramid Attention Enhancement." arXiv:2011.08706, 2020.【要確認：著者・掲載先】
 - Shih G, et al. "Augmenting the National Institutes of Health Chest Radiograph Dataset with Expert Annotations of Possible Pneumonia." *Radiology: Artificial Intelligence* 1(1), e180041 (2019).
 - Gildenblat J, et al. pytorch-grad-cam（GitHub）、検出モデル向けの例（Faster R-CNN）。
+
+---
+
+## 2026-11-19 教授の指摘への回答と、未解決の確認事項（Q-24〜Q-34）
+
+### 教授の指摘（原文）とユーザーの回答
+
+| 番号 | 教授の指摘（原文） | ユーザーの回答 |
+|---|---|---|
+| 1 | I am not a big fan of xAI (in my opinion there is lots of bad science being done under that label), but I can see that you are interested in it, go for it.. | 十分な研究がされていないからこそ魅力があり興味があるので、続けたいと思っている |
+| 2 | I am not sure what a rules-based system means in the context of your application. If you mean some sort of classical computer vision algorithm, it will likely take lots of effort and yield little results, please explain with more detail.. | これから画像の特徴を分析し、アルゴリズムを設計し分類に使用する。（例えば、白いピクセルが多い画像は肺炎の画像にみられる特徴である、や、白いピクセルの密度が関係しているなど、基本的には、いくつかの特徴を組み合わせて簡易的なルールベースモデルを作成する） |
+| 3 | Resnet 101 is a decent model but I would start with resenet50 which is faster and often gets similar results. I would evaluate the training based on accuracy first and then use the confusion matrix (more than precision and recall) to get a more detailed idea of where the model makes the mistakes. Here I am not sure what you mean by "retraining and continued training". You should train for a fixed number of epochs with preset patience, be careful of data leaks and properly define training/validataion/testing sets. For this type of problem probably 10 epochs are enough but we can try up to 50 initially (I would set patience as 5 and 10). We can have a look at possible failed training settings but in general I would not waste too much time on this, decide on a standard set and try a couple of alternative settings to make sure. I would only change the loss function if we want to bias the training towards better results for one particular class.. | 要検討 |
+| 4 | Similar comments for the object detection part. Here I would start YOLO (easy to implement) or MaskRCNN (you already have code). Again, I am not sure ROC is going to help much. | ResNet と同じ構造で評価しやすい Faster R-CNN を使用する予定。ただし要検討 |
+| 5 | Grad CAM may be interesting and is always good to learn but I think it is mostly indicated for the classification task, object detectors already output the boxes that tell you at what parts they are looking. Actually as most object detector networks start with a classifier, I am not sure if we will get anything new. I would drop initially drop grad cam as we are already getting the information of where the networks are looking with the bounding boxes. | （回答なし） |
+
+### 解決した事項
+
+- **XAI を続けるか（指摘1）**：続ける（ユーザーの回答）。教授の「XAI には質の低い研究が多い」という懸念には、評価の方法を結果を見る前に決めておくこと（R-33）、偶然の水準と比べること（R-33）、ショートカットを先に疑うこと（R-34）で応える。健全性チェックを加えるかは Q-34。
+- **データのリークと分割（指摘3）**：Q-19 で、患者単位で train 70% / val 10% / test 20% に分けると決めている。⓪・modelA・modelB で同じ分割を使い、テストデータは最後に1回だけ使う（R-32）。
+- **Q-20（⓪ の中身）**：一部回答済み。「白いピクセルの量や密度などの画像の特徴をいくつか組み合わせ、分類に使う簡易的なルールベースモデル」とする。残る点は Q-25〜Q-27。
+
+### 指摘で状態が変わる既存の項目
+
+| 番号 | 内容 | 状態 |
+|---|---|---|
+| Q-20 | ⓪ の中身 | 一部回答済み → 残りは Q-25〜Q-27 |
+| Q-21 | modelB の事前学習の重み | 未回答（Q-28・Q-32 の回答とあわせて決める） |
+| Q-22 | modelB の Grad-CAM | **再検討**（2026-11-19 の決定は、Q-24 の回答で取り消す可能性がある） |
+| R-31 | 共通の比較軸（ROC-AUC） | **再検討**（指摘4で ROC の有用性に疑問。Q-33 で決める） |
+| R-32 | 目標値と学習のやり直しの規則 | **再検討**（指摘3で「再学習・追加学習」の考え方を変える可能性がある。Q-29・Q-30 で決める） |
+| R-35 | データ拡張 | 未決定のまま（modelA のプログラムを作るときに決める） |
+
+### 確認事項（追加）
+
+★は、最初のプログラム（データの分割と modelA）を書く前に決めたいもの。
+
+| 番号 | 関係する指摘 | 内容 | 選択肢 | 推奨 |
+|---|---|---|---|---|
+| Q-24 ★ | 5 | Grad-CAM をどのモデルに使うか | (a) modelA だけに使う。modelB は、検出した BOX を「見ている場所」として医師の BOX と比べる／(b) 当面はどちらにも使わず、モデルができてから考える／(c) 両方に使う（2026-11-19 の Q-22 の決定のまま） | (a) |
+| Q-25 | 2 | ⓪ で行う範囲 | (a) 2値分類（Lung Opacity か否か）だけ／(b) 3クラス分類／(c) 分類と BBox の検出 | (a) |
+| Q-26 | 2 | ⓪ で特徴を計算する範囲 | (a) 画像全体（明るさを画像ごとにそろえてから）／(b) 画像の中央など、あらかじめ決めた範囲／(c) 肺野（肺野を切り出す処理が別に必要） | (a) から始める |
+| Q-27 | 2 | ⓪ のルール（閾値と組み合わせ）の決め方と、かける期間 | (a) train の特徴の分布を見て、閾値を手で決める／(b) train から浅い決定木などで自動で決める。期間の上限も決める | (a)、上限 1 週間 |
+| Q-28 ★ | 3 | バックボーンを ResNet-50 にするか | (a) modelA・modelB とも ResNet-50 にする／(b) ResNet-101 のまま／(c) modelA だけ ResNet-50 | (a) |
+| Q-29 ★ | 3 | 学習の進め方を教授の方法にするか | (a) 教授の方法にする：最大 50 epoch、patience 5 と 10、「標準の設定」と「別の設定 2〜3 個」を学習して val で選ぶ。構成の「精度が担保されるまで再学習・追加学習」は削除する／(b) 今の構成のまま | (a) |
+| Q-30 ★ | 3 | 学習の評価（epoch の打ち切りとモデルの選択）に使う指標と、目標値の扱い | (a) val の正解率で判断し、誤りの分析は混同行列で行う。マクロ平均 ROC-AUC は補助にする。目標値は「届くまで学習をやり直す基準」ではなく「結果を見る参考値」にする／(b) 今のまま（val のマクロ平均 ROC-AUC、目標値 0.80） | (a) |
+| Q-31 | 3 | 損失関数 | (a) 標準の交差エントロピーのまま／(b) Lung Opacity を重視するよう重みを付ける | (a) |
+| Q-32 ★ | 4 | 検出モデル | (a) 手元の Mask R-CNN のコードから、マスクを予測する部分を外して Faster R-CNN として使う／(b) Faster R-CNN を新しく書く／(c) YOLO | (a)（既存のコードの中身を見てから確定） |
+| Q-33 | 4 | modelB の評価から ROC を外すか | (a) 外す。BOX 単位は適合率・再現率・F値・mAP（IoU 0.5）、画像単位は正解率と混同行列（陽性・陰性）にする。⓪・modelA・modelB の比較（R-31）も、画像単位の正解率と混同行列で行う／(b) ROC を残す | (a) |
+| Q-34 | 1 | Grad-CAM の健全性チェックを加えるか | (a) 加える：モデルの重みをランダムにしたときに CAM が変わることを確かめる（Adebayo et al. 2018）／(b) 加えない | (a) |
+
+### 確認事項の補足
+
+- **Q-24**：教授の指摘のとおり、検出モデルは BOX そのものが「どこを見て判定したか」を示す。modelB の BOX と医師の BOX の一致は、BOX 単位の評価（IoU、mAP）でそのまま測れる。(a) の場合、modelB については「確信度が高いのに医師の BOX と重ならない検出」を「医師と異なる根拠」の候補とし、R-34 の手順で調べる。研究の主題（判断根拠の可視化）は modelA の Grad-CAM で扱う。
+- **Q-25〜Q-27**：教授は「古典的な画像処理は手間のわりに成果が小さい」と指摘している。白いピクセルの量は、陰影だけでなく骨・心臓・チューブ類・文字や、撮影条件（AP/PA）による明るさの違いでも変わる。そのため、範囲を2値分類に絞り、期間の上限を決めて、「深層学習との比較の基準」という役割に限るのがよい。肺野の切り出し（Q-26 の (c)）は、それ自体が大きな作業になる。
+- **Q-28**：パラメータ数は、modelA が 42,506,307 → 23,514,179、modelB（BN 固定・2クラス）が 60,239,065 → 41,299,161 になる（torchvision と同じ構造で計算。ResNet-50 の Faster R-CNN を 91 クラスで数えると 41,755,286 で、torchvision の公表値と一致した）。ResNet-50 なら、torchvision に COCO で学習済みの Faster R-CNN の重みがあり、Q-21 の選択肢が増える。
+- **Q-29**：(a) の場合、「標準の設定」と「別の設定」の中身は、作業ルールに従い「参考にした論文 → 一般的な値」の順で決めて記録する。教授の方法では「目標に届くまで学習をやり直す」ことをしないので、R-32 の「学習のやり直しの規則」は「標準の設定と別の設定の中から val で選ぶ」に置き換わる。
+- **Q-30**：クラスの割合は、Lung Opacity・Not Normal・Normal でおよそ 24%・43%・33% で（graduationResearch での確認。本研究のデータで再確認する）、大きな偏りはないので、正解率で判断しても大きな問題はない。(a) の場合、R-32 で決めた目標値（AUC 0.80、mAP 0.40）は参考値として残す。
+- **Q-32**：RSNA には BBox しかなく、マスク（陰影の輪郭）の正解がない。そのため、Mask R-CNN のマスクを予測する部分は学習できない。torchvision の Mask R-CNN は、Faster R-CNN にマスクを予測する部分を加えたものなので、手元のコードからその部分を外せば Faster R-CNN として使える。これで「既存のコードを使う」（教授）と「Faster R-CNN を使う」（ユーザー）の両方を満たせる。確定には、手元のコードを添付してもらう必要がある。
+- **Q-21（継続）**：Q-28 と Q-32 の回答のあとに決める。意図がはっきりしない場合は、作業ルールに従い、参考にした論文（Ren et al. 2015、Lin et al. 2017）と同じ ImageNet の重みにする。
+
+### 現時点で未回答・保留の項目
+
+| 番号 | 内容 | 状態 |
+|---|---|---|
+| Q-21 | modelB の事前学習の重み | 未回答 |
+| Q-24〜Q-34 | 上記 | 未回答 |
+| R-30 | Faster R-CNN の実装上の注意 | 保留（modelB のプログラムを作るときに説明する） |
+| R-35 | データ拡張 | 未決定 |
