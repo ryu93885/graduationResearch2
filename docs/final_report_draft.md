@@ -1,0 +1,204 @@
+# 最終レポート草案
+
+- **最終更新日**：2026-11-19
+- **管理方法**：上書き形式。検証や方針の決定が進んだら、全体を最新の内容に書き換える。経緯は [`docs/revision_report.md`](revision_report.md) にある。
+- **表記**：【未実施】まだ行っていない／【未確定】決まっていない／【案】提案の段階／【要確認】原典やデータで確かめる必要がある
+
+---
+
+# 胸部X線画像の肺炎分類・検出モデルの判断根拠と医師のアノテーションの比較【案：題目は未確定】
+
+## 要旨【未実施】
+
+結果が出たあとに書く。
+
+## 第1章 序論
+
+### 1.1 研究背景
+
+医療分野でも AI のモデルが活用されている。希少な症例では専門医の読影に劣るものの、一般的な症例では同等以上の性能を示す例がある。しかし、深層学習の判断の根拠は外から見えにくく、その説明可能性は依然として議論の対象である。このことが、医療現場への導入が限られている一因である。
+
+### 1.2 研究目的
+
+本研究は、説明可能な AI（XAI）の手法である Grad-CAM を用いて、胸部X線画像から肺炎の所見（Lung Opacity）を判定するモデルの判断根拠を可視化する。そのうえで、判断根拠が医師のアノテーション（BBox）と整合するかを検証し、AI の判断の信頼性を評価する。また、医師と異なる根拠に基づく判断がある場合に、それが新たな視点での画像検出につながりうるかを併せて検証する。
+
+### 1.3 研究課題【案】
+
+- **RQ1**：深層学習モデル（分類・検出）は、ルールベースの方法より有用か。
+- **RQ2**：モデルの判断根拠（Grad-CAM）は、医師の BBox と整合するか。
+- **RQ3**：医師の BBox と整合しない判断根拠は、ほかの画像と比べて確からしい根拠といえるか。
+
+## 第2章 関連研究【要確認：書誌情報は原典で確認する】
+
+### 2.1 データセット
+
+RSNA Pneumonia Detection Challenge (2018) のデータは、NIH の胸部X線データセットから選んだ正面像 30,000 枚に、放射線科医が肺炎を疑う陰影の BBox と3クラスのラベルを付けたものである [5]。
+
+### 2.2 モデル
+
+画像分類には、残差結合により深い層の学習を可能にした ResNet [1] を用いる。BBox の検出には、領域候補ネットワーク（RPN）と RoI Heads からなる2段階の検出器 Faster R-CNN [2] に、複数の解像度の特徴を組み合わせる FPN [3] を加えたものを用いる。
+
+### 2.3 判断根拠の可視化と評価
+
+Grad-CAM [4] は、対象のスコアの、最後の畳み込み層の特徴マップに対する勾配から、判断に寄与した位置を示すマップを作る。原論文は、マップから作った BOX と正解 BOX の IoU による局在の評価と、pointing game [6] による評価を行っている。胸部X線では、Saporta ら [7] が複数の説明手法を、mIoU と hit rate（pointing game と同じ定義）で比較している。
+
+### 2.4 ショートカット学習
+
+深層学習のモデルは、本来の所見ではなく、撮影条件や写り込みなどの見かけの手がかり（ショートカット）を使うことがある [8, 9, 10]。判断根拠が医師のアノテーションと異なる場合は、まずこの可能性を検討する必要がある。
+
+## 第3章 データセット
+
+### 3.1 使用するデータ
+
+RSNA Pneumonia Detection Challenge (2018) の公式配布データを用いる。各画像には、最終ラベルとして Lung Opacity、No Lung Opacity / Not Normal、Normal のいずれかが付いている。Lung Opacity の画像には、陰影の位置を示す BBox が付いている。本研究では最終ラベルのみを用いる。
+
+- 【要確認】データの枚数、クラスごとの枚数、最終ラベルのない画像の数は、本研究でデータを取得したあとに確認して記載する。
+
+### 3.2 前処理
+
+1024×1024 の画像を 512×512 に縮小し、グレースケールを3チャンネルに複製してモデルに入力する。BBox の座標も同じ比率で縮小する。
+
+### 3.3 データ分割
+
+患者単位で、学習用（train）70%、検証用（val）10%、テスト用（test）20% に1回分割する。同じ患者の画像が複数の分割に入らないようにするためである。
+
+- 【未確定】クラスの比率をそろえる層化を行うかは、分割のプログラムを作るときに決める。
+
+## 第4章 方法
+
+### 4.1 全体の流れ
+
+1. ⓪ ルールベースで分類・検出し、比較の基準とする。
+2. ① modelA（ResNet-101）で3クラス分類を学習する。
+3. ② modelB（Faster R-CNN）で Lung Opacity の BBox 検出を学習する。
+4. ③ テストデータで modelA・modelB の Grad-CAM を作り、医師の BBox との整合を評価する。整合しない根拠は 4.9 節の手順で検証する。
+
+### 4.2 ⓪ ルールベースの分類・検出【未確定】
+
+規則の内容は未定である（確認事項 Q-20）。
+
+### 4.3 ① modelA：画像分類
+
+| 項目 | 設定 |
+|---|---|
+| モデル | torchvision の ResNet-101。fc（2048→1000）を Linear（2048→3）に変える |
+| パラメータ数 | 42,500,160 + 6,147 = 42,506,307 |
+| 事前学習の重み | ImageNet（IMAGENET1K_V2） |
+| 学習する範囲 | 全層 |
+| 出力 | 3クラスの確率（softmax） |
+| 損失関数 | 交差エントロピー |
+| 最適化 | SGD（momentum 0.9、weight decay 1e-4） |
+| 学習率 | 0.001〜0.01 の中から検証用データで決める |
+| バッチサイズ | 16〜32（学習にかかる時間を見て決める） |
+| 学習の終了 | 検証用データの指標が一定の epoch 数改善しなければ終える |
+
+### 4.4 ② modelB：画像検出
+
+| 項目 | 設定 |
+|---|---|
+| モデル | torchvision の Faster R-CNN と `resnet_fpn_backbone`（ResNet-101 + FPN）。予測層を、分類用は 1024→2、BOX 回帰用は 1024→8（背景と Lung Opacity の2クラス）にする |
+| パラメータ数 | 60,239,065（うち学習する部分 60,016,665） |
+| 事前学習の重み | バックボーンは modelA と同じ【未確定：ImageNet の重みか、学習済みの modelA の重みか（Q-21）】。FPN・RPN・RoI Heads は新しく学習する |
+| 学習する範囲 | 最初の畳み込み層と layer1 は固定し、それ以外を学習する。BN は固定する |
+| 出力 | BOX の座標と確信度 |
+| 損失関数 | RPN：二値交差エントロピー + Smooth L1。RoI Heads：交差エントロピー + Smooth L1 |
+| 最適化 | SGD（momentum 0.9、weight decay 5e-4） |
+| 学習率 | 画像1枚あたり 0.001（バッチ 4 なら 0.004、8 なら 0.008） |
+| バッチサイズ | 4〜8 |
+| 学習の終了 | modelA と同じ |
+
+### 4.5 目標値と学習のやり直しの規則
+
+目標値は、参考にした論文の値を優先し、なければ一般的な値から決めた。参考にした論文（[1]〜[5]）には、本研究と同じ課題の性能の値がないため、一般的な値を用いた。
+
+| モデル | 目標値 | 根拠 |
+|---|---|---|
+| modelA | 検証用データのマクロ平均 ROC-AUC **0.80 以上** | AUC の評価の目安で 0.8〜0.9 を excellent とする区分 [11] の下限 |
+| modelB | 検証用データの mAP（IoU 0.5）**0.40 以上** | RSNA での検出の報告値（改良した Faster R-CNN で 39.23% [12]、ほかの検出器で 45〜50% [13]）の下の方の値【要確認：各論文の評価条件】 |
+
+目標値に届かない場合は、損失関数、最適化手法、学習率などを見直して学習をやり直す。この判断は検証用データの値だけで行う。テストデータは、モデルと閾値を固定したあとに1回だけ用いる。
+
+### 4.6 分類・検出の性能の評価
+
+- **modelA**：正解率、クラスごとの適合率・再現率・F値、マクロ平均 F値、クラスごとの ROC-AUC、混同行列。
+- **modelB**：BOX 単位では、IoU 0.5 以上を正解として適合率・再現率・F値・mAP を求める。画像単位では、画像の中の BOX の最大の確信度を用いて、正解率・F値・ROC を求める。適合率・再現率・F値に用いる確信度の閾値は、検証用データで決める。
+- 【案】⓪・modelA・modelB を同じ基準で比べるため、「Lung Opacity か否か」の画像単位の ROC-AUC を共通の指標とする（R-31）。
+
+### 4.7 ③ 判断根拠の可視化
+
+Grad-CAM [4] を用いる。原論文にならい、最後の畳み込み層の特徴マップと、softmax をかける前のスコアの勾配を用いる。
+
+| モデル | 対象のスコア | 層 | 解像度 |
+|---|---|---|---|
+| modelA | Lung Opacity クラスのスコア | ResNet-101 の `layer4` | 16×16（512 に拡大して比べる） |
+| modelB | 確信度が最も高い検出 BOX の、Lung Opacity のスコア（RoI Heads の分類の出力） | バックボーンの ResNet-101 の `layer4` | 16×16（同上） |
+
+- 【案】modelB の Grad-CAM が崩れる場合（画像全体がほぼ一様になるなど）は、比較として、勾配を使わない EigenCAM [14] を用いる。
+
+### 4.8 判断根拠と医師のアノテーションの整合の評価
+
+テストデータの Lung Opacity の画像（医師の BBox がある画像）で、次の指標を求める。
+
+| 区分 | 指標 | 定義 | 出典 |
+|---|---|---|---|
+| 主 | 局在の正解率 | CAM を最大値の 15% で二値化し、最も大きい連結領域を囲む BOX を作る。医師の BOX のいずれかとの IoU が 0.5 以上なら正解 | Grad-CAM の原論文 [4] |
+| 主 | Pointing game の的中率 | CAM の最大値の位置が医師の BOX のいずれかの中にあれば的中 | [4, 6] |
+| 補助 | mIoU | 二値化した CAM と医師の BOX の領域（複数なら和集合）の IoU の平均。閾値は検証用データで mIoU が最大になる値とする | Saporta ら [7] |
+
+- 局在が正解（IoU 0.5 以上）の画像を、「判断根拠が医師のアノテーションと整合する」とみなす。
+- Pointing game の偶然の的中率（BOX が画像に占める面積の割合）を併せて示し、的中率がこれを上回るかを確かめる。
+- モデルが正しく判定した画像と判定しなかった画像、1人読影と3人読影の画像を分けて報告する。
+- 割合には、患者単位のブートストラップによる 95% 信頼区間を付ける。
+
+### 4.9 医師と異なる根拠の検証
+
+Grad-CAM が医師の BBox の外に強く反応した場合でも、ただちに新たな根拠とはみなさない。深層学習のモデルはショートカットを使うことがあり [8, 9, 10]、また BBox の付け忘れも考えられるためである。そこで、次の3つの要因を順に検討し、それで説明できる反応を除く。
+
+1. **撮影条件**：肺炎の陽性画像は、ポータブル撮影（AP）に大きく偏っている。先行して行ったデータの確認では、陽性画像の 77.3% が AP であり（全体では 45.7%）、撮影方向だけで陽性を予測しても ROC-AUC は 0.708 であった【要確認：本研究のデータで再計算する】。そこで、AP と PA に分けて分類性能と整合の指標を求め、根拠の傾向が撮影方向で変わらないかを確かめる。
+2. **写り込み**：文字マーカー、チューブやカテーテル、心電図の電極など、所見と関係のない写り込みに CAM が反応していないかを目視で確かめる。CAM の最大値が肺野の外にある画像は、特に詳しく確かめる。
+3. **BBox の付け忘れ**：多くの画像は1人の読影医が読んでいる。BBox の外の反応が、付け忘れた陰影に当たっている可能性がある。複数（3人）の読影医が読んだ画像でも同じ傾向が出るかを確かめる。
+
+これらで説明できない反応が、多くの画像で同じ解剖学的な位置に繰り返し現れる場合に、「確からしい根拠」の候補とする。候補については、指導教員や専門医の意見を聞いて最終的に判断する。
+
+## 第5章 結果【未実施】
+
+### 5.1 データの確認【未実施】
+
+### 5.2 ⓪ ルールベースの結果【未実施】
+
+### 5.3 modelA の分類性能【未実施】
+
+### 5.4 modelB の検出性能【未実施】
+
+### 5.5 判断根拠と医師のアノテーションの整合【未実施】
+
+### 5.6 医師と異なる根拠の検証【未実施】
+
+## 第6章 考察【未実施】
+
+### 6.1 結果の考察【未実施】
+
+### 6.2 限界【案】
+
+- 本データセットは肺炎が疑われる画像を多く含むように選ばれており、陽性の割合は臨床の現場と異なる。適合率などの値は、そのまま臨床に一般化できない。
+- 医師の BBox は陰影をおおまかに囲んだものであり、陰影の正確な範囲ではない。
+- 多くの画像は1人の読影医が読んでおり、ラベルと BBox には誤りや付け忘れが含まれうる。
+
+## 第7章 結論【未実施】
+
+## 参考文献【要確認：最終レポートに載せる前に原典で確認する】
+
+1. He K, Zhang X, Ren S, Sun J. "Deep Residual Learning for Image Recognition." CVPR, 2016.
+2. Ren S, He K, Girshick R, Sun J. "Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks." NeurIPS, 2015.
+3. Lin TY, Dollár P, Girshick R, He K, Hariharan B, Belongie S. "Feature Pyramid Networks for Object Detection." CVPR, 2017.
+4. Selvaraju RR, Cogswell M, Das A, Vedantam R, Parikh D, Batra D. "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization." ICCV, 2017.
+5. Shih G, Wu CC, Halabi SS, et al. "Augmenting the National Institutes of Health Chest Radiograph Dataset with Expert Annotations of Possible Pneumonia." *Radiology: Artificial Intelligence*, 1(1), e180041, 2019.
+6. Zhang J, Bargal SA, Lin Z, Brandt J, Shen X, Sclaroff S. "Top-Down Neural Attention by Excitation Backprop." *International Journal of Computer Vision*, 2018.（初出は ECCV 2016）
+7. Saporta A, et al. "Benchmarking saliency methods for chest X-ray interpretation." *Nature Machine Intelligence*, 4, 867–878, 2022.
+8. Geirhos R, et al. "Shortcut learning in deep neural networks." *Nature Machine Intelligence*, 2020.
+9. DeGrave AJ, Janizek JD, Lee SI. "AI for radiographic COVID-19 detection selects shortcuts over signal." *Nature Machine Intelligence*, 2021.
+10. Zech JR, et al. "Variable generalization performance of a deep learning model to detect pneumonia in chest radiographs: A cross-sectional study." *PLOS Medicine*, 2018.
+11. Hosmer DW, Lemeshow S, Sturdivant RX. *Applied Logistic Regression*, 3rd ed. Wiley, 2013.
+12. Yao S, et al. "Pneumonia Detection Using an Improved Algorithm Based on Faster R-CNN." 2021.【要確認：著者・掲載誌・評価条件】
+13. "FPAENet: Pneumonia Detection Network Based on Feature Pyramid Attention Enhancement." arXiv:2011.08706, 2020.【要確認：著者・掲載先・評価条件】
+14. Muhammad MB, Yeasin M. "Eigen-CAM: Class Activation Map using Principal Components." IJCNN, 2020.【要確認】
