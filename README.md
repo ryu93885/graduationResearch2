@@ -11,6 +11,7 @@ graduationResearch とは独立した研究として進める（2026-11-19）。
 | [`docs/design/2026-11-18_research_structure.md`](docs/design/2026-11-18_research_structure.md) | 研究の構成（原本は同じフォルダの docx）。コードのレビューの基準 |
 | [`docs/revision_report.md`](docs/revision_report.md) | チャットでの指摘・相談・決定事項の記録（追記形式） |
 | [`docs/final_report_draft.md`](docs/final_report_draft.md) | 最終レポートの草案（上書き形式） |
+| [`docs/reports/`](docs/reports/) | 指導教員に提出する英語の進捗報告書（docx と Markdown 版） |
 | [`CLAUDE.md`](CLAUDE.md) | このリポジトリでの作業ルール |
 
 実行環境の手順（`docs/setup.md`）、実行手順（`docs/procedure.md`）、実行コマンドの一覧（`COMMANDS.md`）は、最初のプログラムを追加するときに作る。
